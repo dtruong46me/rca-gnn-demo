@@ -14,8 +14,9 @@ rca-gnn-demo/
 │   │   ├── event_generator.py       # Event generation
 │   │   ├── incident_generator.py    # Incident & label generation (BFS)
 │   │   └── customer_service_generator.py  # Customer/service data
-│   ├── generate_samples_refactored.py     # Main data generation script
-│   ├── generate_samples_v2.py       # Original data generation (legacy)
+│   ├── generate_samples_refactored.py     # Refactored modular version
+│   ├── generate_samples_v2.py       # Original monolithic version (legacy)
+│   ├── generate_samples.py          # Deprecated (old version)
 │   └── samples/                     # Generated CSV files
 │       ├── devices.csv
 │       ├── edges.csv
@@ -211,13 +212,15 @@ python main.py --mode train --data_dir ./data/samples
 python main_refactored.py --mode train --data_dir ../data/samples
 ```
 
-**Original:**
-```python
+**Original (generate_samples_v2.py - monolithic):**
+```bash
+cd data
 python generate_samples_v2.py
 ```
 
-**Refactored:**
-```python
+**Refactored (modular structure):**
+```bash
+cd data
 python generate_samples_refactored.py --output_dir ./samples
 ```
 
@@ -286,10 +289,12 @@ When adding new features:
 
 ---
 
-**Original Files (Legacy):**
-- `src/main.py` - Original monolithic implementation
-- `data/generate_samples_v2.py` - Original data generation
+**Original Files (Legacy - Monolithic):**
+- `src/main.py` - Original monolithic implementation (344 lines)
+- `data/generate_samples_v2.py` - Original data generation (199 lines)
+- `data/generate_samples.py` - Deprecated old version
 
-**Refactored Files (Use These):**
+**Refactored Files (Use These - Modular):**
 - `src/main_refactored.py` - Clean modular implementation
 - `data/generate_samples_refactored.py` - Modular data generation
+- `data/generators/` - Separate generator modules
