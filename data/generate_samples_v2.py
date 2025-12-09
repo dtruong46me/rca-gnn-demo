@@ -32,19 +32,17 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 # Import from generators module
 from generators import (
+    Config,
+    initialize_random_seeds,
     generate_devices,
     generate_topology,
     generate_events,
-    generate_incidents_and_labels,
+    generate_incidents,
+    generate_labels_bfs,
     generate_customers,
     generate_services,
-    generate_customer_service_mapping
-)
-
-# Import configuration
-from src.config import (
-    NUM_DEVICES, NUM_CUSTOMERS, NUM_SERVICES, NUM_EVENTS, NUM_INCIDENTS,
-    RANDOM_SEED
+    generate_customer_service_mapping,
+    export_dataframes
 )
 
 
@@ -54,58 +52,17 @@ from src.config import (
 # MAIN EXECUTION
 # ============================================================================
 
-def export_dataframes(
-    output_dir: str,
-    devices: pd.DataFrame,
-    edges: pd.DataFrame,
-    customers: pd.DataFrame,
-    services: pd.DataFrame,
-    events: pd.DataFrame,
-    incidents: pd.DataFrame,
-    incident_events: pd.DataFrame,
-    labels: pd.DataFrame
-) -> None:
-    """
-    Export all DataFrames to CSV files.
-    
-    Args:
-        output_dir: Directory to save CSV files
-        devices, edges, customers, services, events, incidents, 
-        incident_events, labels: DataFrames to export
-    """
-    os.makedirs(output_dir, exist_ok=True)
-    
-    files = {
-        "devices.csv": devices,
-        "edges.csv": edges,
-        "customers.csv": customers,
-        "services.csv": services,
-        "events.csv": events,
-        "incidents.csv": incidents,
-        "incident_events.csv": incident_events,
-        "node_labels.csv": labels
-    }
-    
-    print(f"\nExporting files to: {output_dir}")
-    print("=" * 60)
-    
-    for filename, df in files.items():
-        filepath = os.path.join(output_dir, filename)
-        df.to_csv(filepath, index=False)
-        print(f"✓ Saved {filename} ({len(df)} rows)")
-    
-    print("=" * 60)
-    print(f"Successfully generated {len(files)} files!\n")
-
-
-def generate_all_data(config: Config = Config(), output_dir: str = ".") -> None:
+def generate_all_data(config: Config | None = None, output_dir: str = ".") -> None:
     """
     Main function to generate all sample data.
     
     Args:
-        config: Configuration object with generation parameters
+        config: Configuration object with generation parameters (defaults to Config())
         output_dir: Directory to save generated CSV files
     """
+    if config is None:
+        config = Config()
+    
     print("\n" + "=" * 60)
     print("RCA-GNN Sample Data Generation (Refactored v2)")
     print("=" * 60)
@@ -140,19 +97,17 @@ def generate_all_data(config: Config = Config(), output_dir: str = ".") -> None:
     events = generate_events(devices, config, start_time)
     print(f"   ✓ Generated {len(events)} events")
     
-    # 5. Generate incidents
-    print("\n5. Generating incidents...")
+    # 5. Generate incidents and labels
+    print("\n5. Generating incidents and labels...")
     incidents, incident_events = generate_incidents(devices, events, config, start_time)
     print(f"   ✓ Generated {len(incidents)} incidents")
     print(f"   ✓ Generated {len(incident_events)} incident-event associations")
     
-    # 6. Generate labels
-    print("\n6. Generating labels using BFS...")
     labels = generate_labels_bfs(devices, edges, incidents)
-    print(f"   ✓ Generated {len(labels)} labels")
+    print(f"   ✓ Generated {len(labels)} labels using BFS")
     
-    # 7. Export files
-    print("\n7. Exporting data...")
+    # 6. Export files
+    print("\n6. Exporting data...")
     export_dataframes(
         output_dir,
         devices, edges, customers, services,
