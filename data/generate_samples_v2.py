@@ -1,198 +1,238 @@
-import pandas as pd
-import numpy as np
-import random
+"""
+Generate sample data for RCA-GNN system (Refactored Version).
+
+This script generates synthetic network topology, devices, events,
+incidents, and labels for training and testing the RCA-GNN model.
+
+This refactored version uses modular generators from the generators/ folder,
+providing clean separation of concerns and better maintainability.
+
+Usage:
+    python generate_samples_v2.py [--output_dir OUTPUT_DIR] [--num_devices NUM] 
+                                  [--num_incidents NUM] [--num_events NUM]
+
+Examples:
+    # Generate with default settings
+    python generate_samples_v2.py
+    
+    # Specify output directory
+    python generate_samples_v2.py --output_dir ./samples
+    
+    # Customize counts
+    python generate_samples_v2.py --num_devices 100 --num_incidents 50
+"""
+
+import os
+import sys
+import argparse
 from datetime import datetime, timedelta
-from collections import deque
 
-# -----------------------------------------
-# CONFIG
-# -----------------------------------------
-random.seed(42)
-np.random.seed(42)
+# Add project root to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-NUM_DEVICES = 80
-NUM_CUSTOMERS = 150
-NUM_SERVICES = 80
-NUM_EVENTS = 1500
-NUM_INCIDENTS = 30
+# Import from generators module
+from generators import (
+    generate_devices,
+    generate_topology,
+    generate_events,
+    generate_incidents_and_labels,
+    generate_customers,
+    generate_services,
+    generate_customer_service_mapping
+)
 
-vendors = ["Huawei", "ZTE", "GCOM", "Cisco", "Juniper"]
-layers = ["CORE", "AGG", "ACCESS", "OLT", "ONU"]
-models = ["X6000", "C300", "MA5800", "S6720", "QFX5100"]
-event_types = ["LOS", "linkDown", "highCPU", "highTemp", "packetDrop"]
-severity_list = ["critical", "major", "minor", "warning"]
-link_types = ["fiber", "ethernet"]
+# Import configuration
+from src.config import (
+    NUM_DEVICES, NUM_CUSTOMERS, NUM_SERVICES, NUM_EVENTS, NUM_INCIDENTS,
+    RANDOM_SEED
+)
 
-start_time = datetime.now() - timedelta(days=1)
 
-# -----------------------------------------
-# 1. Generate Devices
-# -----------------------------------------
-devices = []
-for i in range(NUM_DEVICES):
-    dev = {
-        "device_id": f"DEV_{i}",
-        "vendor": random.choice(vendors),
-        "model": random.choice(models),
-        "layer": random.choice(layers),
-        "site": f"SITE_{random.randint(1, 40)}",
-        "rack": random.randint(1, 5),
-        "slot": random.randint(1, 12),
-        "port": random.randint(1, 48)
+
+
+# ============================================================================
+# MAIN EXECUTION
+# ============================================================================
+
+def export_dataframes(
+    output_dir: str,
+    devices: pd.DataFrame,
+    edges: pd.DataFrame,
+    customers: pd.DataFrame,
+    services: pd.DataFrame,
+    events: pd.DataFrame,
+    incidents: pd.DataFrame,
+    incident_events: pd.DataFrame,
+    labels: pd.DataFrame
+) -> None:
+    """
+    Export all DataFrames to CSV files.
+    
+    Args:
+        output_dir: Directory to save CSV files
+        devices, edges, customers, services, events, incidents, 
+        incident_events, labels: DataFrames to export
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    
+    files = {
+        "devices.csv": devices,
+        "edges.csv": edges,
+        "customers.csv": customers,
+        "services.csv": services,
+        "events.csv": events,
+        "incidents.csv": incidents,
+        "incident_events.csv": incident_events,
+        "node_labels.csv": labels
     }
-    devices.append(dev)
+    
+    print(f"\nExporting files to: {output_dir}")
+    print("=" * 60)
+    
+    for filename, df in files.items():
+        filepath = os.path.join(output_dir, filename)
+        df.to_csv(filepath, index=False)
+        print(f"✓ Saved {filename} ({len(df)} rows)")
+    
+    print("=" * 60)
+    print(f"Successfully generated {len(files)} files!\n")
 
-df_devices = pd.DataFrame(devices)
 
-# -----------------------------------------
-# 2. Generate Topology Edges
-# -----------------------------------------
-core = df_devices[df_devices.layer == "CORE"]
-agg = df_devices[df_devices.layer == "AGG"]
-access = df_devices[df_devices.layer == "ACCESS"]
-olt = df_devices[df_devices.layer == "OLT"]
-onu = df_devices[df_devices.layer == "ONU"]
+def generate_all_data(config: Config = Config(), output_dir: str = ".") -> None:
+    """
+    Main function to generate all sample data.
+    
+    Args:
+        config: Configuration object with generation parameters
+        output_dir: Directory to save generated CSV files
+    """
+    print("\n" + "=" * 60)
+    print("RCA-GNN Sample Data Generation (Refactored v2)")
+    print("=" * 60)
+    
+    # Initialize random seeds
+    initialize_random_seeds(config.RANDOM_SEED)
+    
+    # Set start time
+    start_time = datetime.now() - timedelta(days=config.TIME_RANGE_DAYS)
+    
+    # 1. Generate devices
+    print("\n1. Generating devices...")
+    devices = generate_devices(config)
+    print(f"   ✓ Generated {len(devices)} devices")
+    
+    # 2. Generate topology
+    print("\n2. Generating network topology...")
+    edges = generate_topology(devices, config)
+    print(f"   ✓ Generated {len(edges)} edges")
+    
+    # 3. Generate customers and services
+    print("\n3. Generating customers and services...")
+    customers = generate_customers(config)
+    services = generate_services(config)
+    customer_service = generate_customer_service_mapping(customers, services)
+    print(f"   ✓ Generated {len(customers)} customers")
+    print(f"   ✓ Generated {len(services)} services")
+    print(f"   ✓ Generated {len(customer_service)} mappings")
+    
+    # 4. Generate events
+    print("\n4. Generating events...")
+    events = generate_events(devices, config, start_time)
+    print(f"   ✓ Generated {len(events)} events")
+    
+    # 5. Generate incidents
+    print("\n5. Generating incidents...")
+    incidents, incident_events = generate_incidents(devices, events, config, start_time)
+    print(f"   ✓ Generated {len(incidents)} incidents")
+    print(f"   ✓ Generated {len(incident_events)} incident-event associations")
+    
+    # 6. Generate labels
+    print("\n6. Generating labels using BFS...")
+    labels = generate_labels_bfs(devices, edges, incidents)
+    print(f"   ✓ Generated {len(labels)} labels")
+    
+    # 7. Export files
+    print("\n7. Exporting data...")
+    export_dataframes(
+        output_dir,
+        devices, edges, customers, services,
+        events, incidents, incident_events, labels
+    )
+    
+    print("=" * 60)
+    print("DATA GENERATION COMPLETED SUCCESSFULLY")
+    print("=" * 60 + "\n")
 
-def create_edges(src_df, tgt_df, max_edges=3):
-    edges = []
-    for _, src in src_df.iterrows():
-        if len(tgt_df) == 0:
-            continue
-        targets = tgt_df.sample(min(len(tgt_df), random.randint(1, max_edges)))
-        for _, tgt in targets.iterrows():
-            edges.append({
-                "source": src.device_id,
-                "target": tgt.device_id,
-                "link_type": random.choice(link_types),
-                "capacity_Mbps": random.choice([100, 1000, 10000])
-            })
-    return edges
 
-edges = []
-edges += create_edges(core, agg)
-edges += create_edges(agg, access)
-edges += create_edges(access, olt)
-edges += create_edges(olt, onu)
+def main():
+    """Main entry point with CLI argument parsing."""
+    parser = argparse.ArgumentParser(
+        description="Generate sample data for RCA-GNN system (Refactored v2)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Generate with default settings
+  python generate_samples_v2.py
+  
+  # Specify output directory
+  python generate_samples_v2.py --output_dir ./samples
+  
+  # Customize counts
+  python generate_samples_v2.py --num_devices 100 --num_incidents 50
+        """
+    )
+    
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default=".",
+        help="Directory to save generated CSV files (default: current directory)"
+    )
+    
+    parser.add_argument(
+        "--num_devices",
+        type=int,
+        default=Config.NUM_DEVICES,
+        help=f"Number of devices to generate (default: {Config.NUM_DEVICES})"
+    )
+    
+    parser.add_argument(
+        "--num_incidents",
+        type=int,
+        default=Config.NUM_INCIDENTS,
+        help=f"Number of incidents to generate (default: {Config.NUM_INCIDENTS})"
+    )
+    
+    parser.add_argument(
+        "--num_events",
+        type=int,
+        default=Config.NUM_EVENTS,
+        help=f"Number of events to generate (default: {Config.NUM_EVENTS})"
+    )
+    
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=Config.RANDOM_SEED,
+        help=f"Random seed for reproducibility (default: {Config.RANDOM_SEED})"
+    )
+    
+    args = parser.parse_args()
+    
+    # Create custom config if parameters provided
+    config = Config()
+    if args.num_devices != Config.NUM_DEVICES:
+        config.NUM_DEVICES = args.num_devices
+    if args.num_incidents != Config.NUM_INCIDENTS:
+        config.NUM_INCIDENTS = args.num_incidents
+    if args.num_events != Config.NUM_EVENTS:
+        config.NUM_EVENTS = args.num_events
+    if args.seed != Config.RANDOM_SEED:
+        config.RANDOM_SEED = args.seed
+    
+    # Generate all data
+    generate_all_data(config, args.output_dir)
 
-df_edges = pd.DataFrame(edges)
 
-# -----------------------------------------
-# 3. Customers + Services
-# -----------------------------------------
-df_customers = pd.DataFrame([
-    {"customer_id": f"CUST_{i}", "site": f"SITE_{random.randint(1,40)}"}
-    for i in range(NUM_CUSTOMERS)
-])
-
-df_services = pd.DataFrame([
-    {"service_id": f"SRV_{i}", "type": random.choice(["Internet", "VoIP", "VPN"])}
-    for i in range(NUM_SERVICES)
-])
-
-df_customer_service = pd.DataFrame([
-    {"customer_id": c.customer_id, "service_id": df_services.sample(1).iloc[0].service_id}
-    for _, c in df_customers.iterrows()
-])
-
-# -----------------------------------------
-# 4. Events
-# -----------------------------------------
-events = []
-for i in range(NUM_EVENTS):
-    ts = start_time + timedelta(seconds=random.randint(0, 3600*24))
-    dev = df_devices.sample(1).iloc[0]
-    events.append({
-        "event_id": f"EV_{i}",
-        "device_id": dev.device_id,
-        "timestamp": ts.strftime("%Y-%m-%d %H:%M:%S"),
-        "event_type": random.choice(event_types),
-        "severity": random.choice(severity_list)
-    })
-
-df_events = pd.DataFrame(events)
-
-# -----------------------------------------
-# 5. Generate Incidents
-# -----------------------------------------
-incidents = []
-incident_events = []
-
-for inc in range(NUM_INCIDENTS):
-    root = df_devices.sample(1).iloc[0].device_id
-    ts = start_time + timedelta(seconds=random.randint(0, 3600*24))
-
-    incidents.append({
-        "incident_id": f"INC_{inc}",
-        "root_cause_device": root,
-        "timestamp": ts.strftime("%Y-%m-%d %H:%M:%S")
-    })
-
-    # randomly attach some events
-    related = df_events.sample(random.randint(10, 20))
-    for _, r in related.iterrows():
-        incident_events.append({
-            "incident_id": f"INC_{inc}",
-            "event_id": r.event_id
-        })
-
-df_incidents = pd.DataFrame(incidents)
-df_incident_events = pd.DataFrame(incident_events)
-
-# -----------------------------------------
-# 6. Build Graph for BFS
-# -----------------------------------------
-graph = {}
-for dev in df_devices.device_id:
-    graph[dev] = []
-
-for _, row in df_edges.iterrows():
-    graph[row["source"]].append(row["target"])  # directional
-
-# -----------------------------------------
-# 7. LABEL GENERATION (0,1,2)
-# -----------------------------------------
-labels = []
-
-for _, inc in df_incidents.iterrows():
-    root = inc.root_cause_device
-    incident_id = inc.incident_id
-
-    node_label = {dev: 0 for dev in df_devices.device_id}  # default 0
-    node_label[root] = 2  # root cause = 2
-
-    # BFS from root → mark victim nodes
-    queue = deque([root])
-    visited = set([root])
-
-    while queue:
-        cur = queue.popleft()
-        for neighbor in graph.get(cur, []):
-            if neighbor not in visited:
-                node_label[neighbor] = 1  # victim
-                visited.add(neighbor)
-                queue.append(neighbor)
-
-    # save label rows
-    for dev, lab in node_label.items():
-        labels.append({
-            "incident_id": incident_id,
-            "device_id": dev,
-            "label": lab
-        })
-
-df_labels = pd.DataFrame(labels)
-
-# -----------------------------------------
-# EXPORT FILES
-# -----------------------------------------
-df_devices.to_csv("devices.csv", index=False)
-df_edges.to_csv("edges.csv", index=False)
-df_customers.to_csv("customers.csv", index=False)
-df_services.to_csv("services.csv", index=False)
-df_events.to_csv("events.csv", index=False)
-df_incidents.to_csv("incidents.csv", index=False)
-df_incident_events.to_csv("incident_events.csv", index=False)
-df_labels.to_csv("node_labels.csv", index=False)
-
-print("Generated files:")
-print("devices.csv, edges.csv, customers.csv, services.csv, events.csv, incidents.csv, incident_events.csv, node_labels.csv")
+if __name__ == "__main__":
+    main()
